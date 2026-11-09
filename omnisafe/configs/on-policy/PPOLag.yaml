@@ -352,3 +352,32 @@ SafeMetaDrive:
     lambda_lr: 0.01
     # Type of lagrangian optimizer
     lambda_optimizer: "Adam"
+
+# Forward expert training for Liu's Blocked Half-Cheetah on modern physics.
+# All unspecified PPO/model settings inherit the standard defaults above.
+# Register the custom task before constructing the native OmniSafe Agent:
+# python -m examples.train_from_config --algo PPOLag --env-id HCWithPos-v0 --env-import ICRL.blocked_envs
+HCWithPos-v0:
+  seed: 123
+  train_cfgs:
+    device: cpu
+    torch_threads: 1
+    vector_env_nums: 1
+    parallel: 1
+    total_steps: 4000000
+  algo_cfgs:
+    obs_normalize: True
+    reward_normalize: False
+    cost_normalize: False
+  lagrange_cfgs:
+    # Target mean raw cumulative cost per episode, not a per-episode cap.
+    # Expert data collection should subsequently retain only zero-cost episodes.
+    cost_limit: 1.0
+  env_cfgs:
+    backend: modern
+    # Cost is 1 for every post-step position strictly below this boundary.
+    cost_boundary: -3.0
+    max_episode_steps: 1000
+  logger_cfgs:
+    save_model_freq: 25
+    log_dir: runs/experts/HC_modern

@@ -1,0 +1,14 @@
+# Collection settings only. Task/backend/boundary/horizon and actor architecture
+# are restored from the run's config.json. Paths are relative to this YAML.
+clip_actions: true
+run_dir: ../../runs/experts/HC_modern/PPOLag-{HCWithPos-v0}/seed-123-2026-11-08-16-27-59
+checkpoint: epoch-200.pt
+output: ../data/generated/HC_seed123_clipped
+episodes: 10
+seed: 20000
+deterministic: false
+# Retain complete episodes with zero raw true cost. No reward filter by default.
+max_episode_cost: 0.0
+min_episode_reward: null
+max_attempts: 100
+torch_threads: 1
