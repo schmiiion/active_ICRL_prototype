@@ -1,8 +1,9 @@
 # Liu benchmark reproduction audit
 
-Audit date: 2026-11-08. This document records source behavior and the intended
-mapping into this prototype on the installed OmniSafe MuJoCo runtime.
-Passing component checks is not evidence that the
+Audit updated: 2026-11-09. This document records source provenance and the
+current native OmniSafe transfer implementation on the installed MuJoCo runtime.
+The former Liu-compatible forward pipeline has been removed. Passing constraint
+component checks is not evidence that the
 published learning curves have been reproduced; full multi-seed training and
 evaluation remain separate requirements.
 
@@ -50,11 +51,11 @@ evaluation remain separate requirements.
 
 All four use 2,048 rollout steps per worker, actor and each critic `[64,64]`,
 reward/cost discounts .99, value coefficients .5, gradient clipping .5,
-entropy coefficient 0, and cost budget 0. Five workers are the prototype's
-reference run setting, consistent with the source tutorial's `-n 5` command;
-the source CLI itself defaults to one worker. Five workers produce 10,240
-transitions per complete rollout, so requested 200,000/50,000 forward steps
-actually collect 204,800/51,200. Avoid treating the requested count as exact.
+entropy coefficient 0, and cost budget 0. The former reference-style path used
+five workers, consistent with the source tutorial's `-n 5` command; the source
+CLI itself defaults to one. That historical layout collected 10,240 transitions
+per rollout and rounded 200,000/50,000 requested steps to 204,800/51,200. Current
+native presets use one simulator and exact whole-epoch training budgets.
 
 MECL uses per-step importance sampling, without replay. VICRL samples its Beta
 feasibility distribution. Only HC VICRL enables the replay queue, capped at
@@ -63,41 +64,34 @@ Observation, reward and cost normalization are enabled in the training env;
 constraint-network observation normalization is disabled. Full YAMLs remain
 the source of truth for settings omitted from this table.
 
-## Source-to-port semantic mapping
+## Historical source semantics and current native treatment
 
-Source line numbers below refer to the pinned reference checkout.
+Source line numbers refer to the pinned reference checkout. The former
+Liu-compatible PPO/collector/normalization implementation and its differential
+tests have been removed; the source findings below document differences rather
+than promise current forward-update parity.
 
-| Reference source | Required behavior | Prototype location |
+| Reference source | Source behavior | Current native treatment |
 |---|---|---|
-| `utils/model_utils.py:192`; `stable_baselines3/ppo_lag/ppo_lag.py:71` | `algo_type` defaults to `lagrangian`. Although PID coefficients appear in YAML and are passed as `pid_kwargs`, they do not activate PID. | `liu_ppo.py`, `LiuPPOLag` and `DualVariable` |
-| `ppo_lag.py:216` | Normalize reward advantages per minibatch; center cost advantages without dividing by their standard deviation. | `liu_ppo.py:104`, `ppo_loss` |
-| `ppo_lag.py:227` | Clip reward surrogate only; add the un-clipped cost importance-ratio term; divide policy objective by `1 + nu`. | `liu_ppo.py:104`, `ppo_loss` |
-| `ppo_lag.py:288` | KL estimate is mean old log-probability minus new log-probability. Stop after the epoch when it exceeds `1.5 * target_kl`. | `liu_ppo.py:164`, `LiuPPOLag.update` |
-| `ppo_lag.py:300`; `common/dual_variable.py:17` | Update dual after policy updates using **mean raw per-step rollout cost**, with Adam on a softplus parameter and the source clamp expression. This is not an episode-cost update. | `liu_ppo.py:67`, `DualVariable` |
-| `common/on_policy_algorithm.py:390,424`; `common/buffers.py` | Bootstrap with the critic values evaluated **before the final rollout action**, as the source collector does, including on nonterminal rollout boundaries. Do not replace them with recomputed `V(next_obs)`. Preserve the boolean final done mask and float32 earlier masks, including the resulting float64 final-step intermediate. | `liu_ppo.py`, `collect` and `gae`; original-source collector regression in `tests/test_ppo_equivalence.py` |
-| `common/base_class.py:337`; `common/on_policy_algorithm.py:447` | Every outer `.learn()` call resets timestep counters and environments, while retaining policy, dual, optimizers and running normalization statistics. | `liu_ppo.py:190`, `train_for`; `rollouts.py:43`, `reset` |
-| `stable_baselines3/common/vec_env/vec_normalize.py` | Preserve running-moment update order and discounted-return scaling; reset updates return statistics but not observation statistics in this source version. | `normalization.py:28`, `LiuNormalize`; `tests/test_normalization_equivalence.py` |
-| `stable_baselines3/common/vec_env/vec_cost_wrapper.py:64`; `utils/env_utils.py:98` | Learned cost sees pre-step state/action; true cost sees post-step state. Compute true cost before auto-reset. | `rollouts.py:55`, `step` |
-| `common/cns_monitor.py:150` | Episode violation is an ever-violated 0/1 flag. Feasible reward excludes the first violating transition and everything afterward, even if the agent returns to safety. | `rollouts.py:55`, `step`; `episodes.csv` columns `constraint`, `reward_nc` |
-| `interface/train_icrl.py:359` | Alternate forward policy optimization, fresh stochastic nominal trajectory sampling, then constraint-network update. | `interface/train_icrl.py`; `rollouts.py:96`, `sample_trajectories` |
-| `constraint_models/constraint_net/` | Preserve MECL/VICRL objectives, feature selection, preprocessing, importance weights, prior and stochastic cost behavior. | copied `constraint_models/`; `tests/test_constraint_equivalence.py` |
+| `utils/model_utils.py:192`; `stable_baselines3/ppo_lag/ppo_lag.py:71` | `algo_type` defaults to `lagrangian`; passing PID coefficients does not activate PID. | Native OmniSafe PPO-Lag; no copied PID option. |
+| `ppo_lag.py:216,227` | Normalize reward advantages per minibatch, center cost advantages, clip only the reward surrogate and add an un-clipped cost term. | Native advantage handling and clipped combined reward/cost surrogate. |
+| `ppo_lag.py:288` | Stop after an epoch when mean old-minus-new log probability exceeds `1.5 * target_kl`. | Native KL estimate and stopping rule. |
+| `ppo_lag.py:300`; `common/dual_variable.py:17` | Update dual after policy updates from mean raw per-step cost, using Adam on a softplus parameter. | Native multiplier update before policy updates, from episode cost statistics. |
+| `common/on_policy_algorithm.py:390,424`; `common/buffers.py` | Bootstrap with critic values from before the final action, including the source final-mask dtype promotion. | Native collector, bootstrap and GAE; source collector quirks are not retained. |
+| `common/base_class.py:337`; `common/on_policy_algorithm.py:447` | Outer `.learn()` resets counters/environments but retains policy, dual, optimizers and normalization statistics. | Native models, optimizers, multiplier, schedules and normalizers persist; native epochs reset episodes. |
+| `stable_baselines3/common/vec_env/vec_normalize.py` | Source running-moment order, return scaling, clipping and reset behavior. | Native OmniSafe normalization. |
+| `stable_baselines3/common/vec_env/vec_cost_wrapper.py:64`; `utils/env_utils.py:98` | Learned cost sees pre-step state/action; true cost sees post-step state before auto-reset. | `learned_cost_adapter.py`; raw inputs and true costs are retained. |
+| `common/cns_monitor.py:150` | Episode violation is an ever-violated flag; feasible reward stops before the first violating transition. | `learned_cost_adapter.py`, `native_sampling.py`; `episodes.csv` columns `constraint`, `reward_nc`. |
+| `interface/train_icrl.py:359` | Alternate forward optimization, fresh stochastic nominal sampling and constraint update. | `interface/train_icrl.py`, `native_sampling.py`. |
+| `constraint_models/constraint_net/` | MECL/VICRL objectives, preprocessing, importance weights, prior and stochastic cost behavior. | Retained `constraint_models/`; `tests/test_constraint_equivalence.py`. |
 
-The dedicated `LiuPPOLag` path is the reference reproduction solver. Merely
-selecting the ordinary OmniSafe PPOLag solver with matching YAML values does
-not preserve these numerical semantics.
-
-## Initialization and random-number ordering
-
-The source constructs environments, then the constraint network, then the PPO
-agent. `common/cns_env.py:51` calls global `set_random_seed(seed)` during each
-environment-factory construction. Sampling/evaluation factories use their
-default seed 0. Consequently their construction can reset Python/NumPy/Torch
-global RNGs to 0 **before constraint-network initialization**, even for a run
-whose requested training seed differs. Later PPO `_setup_model()` calls
-`set_random_seed(self.seed)` before policy construction and reseeds training
-environments with worker offsets. See `common/on_policy_algorithm.py:321` and
-`common/base_class.py:479`. A port must preserve or explicitly record a change
-to this order; setting a single global seed once at program entry is different.
+Source initialization also differs. Environment-factory construction can reset
+Python/NumPy/Torch RNGs to 0 before constraint initialization, and PPO later
+reseeds before policy construction (`common/cns_env.py:51`,
+`common/on_policy_algorithm.py:321`, `common/base_class.py:479`). Current configs
+record separate training, constraint and sampling seeds, while native policy
+initialization follows OmniSafe. Matching seed numbers or hyperparameters does
+not recreate the source RNG sequence or forward optimization.
 
 ## Figure 2-style plotting
 
@@ -128,11 +122,14 @@ to this order; setting a single global seed once at program entry is different.
 
 ## Validation scope and runtime limits
 
-The component suites are `tests/test_constraint_equivalence.py`,
-`tests/test_ppo_equivalence.py`, and `tests/test_normalization_equivalence.py`.
-Use their actual execution results and the runner's `validate_run.py` report
-when stating which checks passed. This audit does not assert a completed
-five-seed learning-curve reproduction.
+`tests/test_constraint_equivalence.py` compares retained constraint behavior
+with the source. Native integration tests cover persistent training, sampling,
+logging and configuration; environment, demonstration and plotting suites cover
+the retained task/data/metric paths. `validate_run.py` replays only a recorded
+constraint update from saved samples, optimizer and RNG states. Source PPO and
+normalization replay are no longer supported. Use actual suite results and the
+run's validation report when stating which checks passed; this audit asserts
+no completed five-seed learning-curve reproduction.
 
 The plotting helper was exercised on synthetic four-task/two-method/two-seed
 episode CSVs; forward smoothing and unequal-length aggregation were checked
@@ -152,13 +149,21 @@ runtime preserves reset and 100-transition traces of all four former modern
 paths bit-exactly. The 4M-step native OmniSafe HC expert and its NumPy trajectories
 therefore retain the same task behavior.
 
-The active VICRL HC experiment now uses native OmniSafe `PPOLag` inside the
-ICRL loop as well as for expert training. Other reference presets retain
-`LiuPPOLag`; `run.solver` records the selected implementation explicitly.
-Fixed-batch numerical checks still compare the ported objectives/updates to
-original source on the installed PyTorch version. Environment replay against
-an old simulator is no longer supported. Historical run metadata and results
-retain their original simulator provenance and must be interpreted accordingly.
+All eight active MECL/VICRL presets now use native OmniSafe `PPOLag` inside
+the ICRL loop; `run.solver: omnisafe` is the only accepted solver. The six
+non-HC presets are unvalidated native transfers: source PPO values are mapped
+where native options exist, with one simulator and 10,000 transitions per epoch.
+Their task definitions, constraint settings, demonstration counts and requested
+training budgets remain. HC settings are unchanged by this cleanup.
+
+Fixed-data numerical checks apply to retained constraint updates on the installed
+PyTorch version. They establish neither native PPO/source equivalence nor replay
+against the old simulator. Historical run metadata and results retain their
+actual solver/simulator provenance and must be interpreted accordingly.
+
+Historical reference-solver checkpoints that pickle the removed normalizer
+classes require a pre-cleanup checkout to load. Native checkpoints contain
+normalizer state dictionaries and remain usable.
 
 ## Expert demonstration counts
 
@@ -171,8 +176,8 @@ for 23,474 pairs in total.
 
 Our newly collected HC dataset contains ten 1,000-step episodes: 10,000 pairs,
 twice the released HC experiment's 5,000. Equal trajectory counts do not imply
-equal demonstration volume. The active reference settings preserve the source
-counts, while the collector explicitly records its selected episode horizon.
+equal demonstration volume. Active presets preserve source trajectory counts,
+while the collector explicitly records its selected episode horizon.
 
 ## Active configuration and collection
 
@@ -194,17 +199,18 @@ directory; existing trajectories are not rewritten or regenerated.
 Dataset manifests record attempts, filtering, environment settings and hashes.
 The ICRL loader rejects environment/backend/boundary/horizon mismatches.
 
-## Recorded native OmniSafe VICRL HC experiment
+## Recorded native OmniSafe HC experiments
 
-The completed six-million-step VICRL HC seed-123 run selected ten generated NPZ
-trajectories (10,000 pairs), one simulator, 30 outer iterations and 200,000
-forward transitions per iteration. Its saved config and metadata retain the
-settings actually used. The current `config/VICRL_HC.yaml` preset uses 60 outer
-iterations; MECL HC uses 30. Native epochs contain 20,000 transitions. The
-`omnisafe` block controls the
-native PPO/model/normalization/Lagrange settings; resolved settings are saved
-with the run. The learned-cost target remains zero, distinct from the expert's
-known-cost training budget of one.
+The latest 12-million-step VICRL HC runs (seeds 0, 42 and 123; `*_60iters`)
+already used native OmniSafe: 60 outer iterations of 200,000 transitions, one
+simulator and ten generated NPZ trajectories (10,000 pairs). The earlier
+six-million-step seed-123 run likewise used native PPO-Lag. Saved configs and
+metadata retain each run's actual settings; this cleanup changes neither those
+artifacts nor HC training settings. The active `config/VICRL_HC.yaml` uses 60
+outer iterations; MECL HC uses 30. HC native epochs contain 20,000 transitions.
+The `omnisafe` block controls native PPO/model/normalization/Lagrange settings.
+The learned-cost target remains zero, distinct from the expert's known-cost
+training budget of one.
 
 `ICRL_PPOLag` delegates all policy/critic/Lagrange updates to inherited native
 methods and retains their state across outer iterations. Its additional
@@ -230,10 +236,10 @@ Historical outputs and datasets keep their original provenance and contents.
 
 The recorded first 10-update VICRL
 constraint fit matches original losses, gradients, parameters and Adam states
-exactly on the same samples (`numerical_validation.json`). Source-PPO validation
-is explicitly not applicable to the native solver. Fixed-data constraint parity
-does not establish equivalence of environment rewards, collectors or complete
-experiments.
+exactly on the same samples (`numerical_validation.json`). The current validator
+retains this constraint replay and performs no source-PPO validation. Fixed-data
+constraint parity does not establish equivalence of environment rewards,
+collectors or complete experiments.
 
 TensorBoard and `episodes.csv` preserve raw returns, true/learned costs,
 episode violations and feasible rewards. The Figure2 event series implement
@@ -248,4 +254,5 @@ Explicit observation/action selection fixes an inherited indexing bug: actions
 are offset by the full observation dimension, since selection follows
 concatenation. Released experiments select all features, so their defaults are
 unchanged. Modified activation/feature/normalization settings define modified
-experiments; source-parity results apply to original-equivalent settings.
+experiments; constraint parity results apply to original-equivalent constraint
+settings.

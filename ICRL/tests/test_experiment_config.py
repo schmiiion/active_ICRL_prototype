@@ -28,40 +28,103 @@ class ExperimentConfigTest(unittest.TestCase):
                     self.assertEqual(config['method'], method)
                     self.assertEqual(config['task'], task)
                     self.assertEqual(source.name, f'{method}_{task}.yaml')
-                    expected_solver = 'omnisafe' if task == 'HC' else 'liu'
-                    self.assertEqual(config['run']['solver'], expected_solver)
+                    self.assertEqual(config['run']['solver'], 'omnisafe')
                     self.assertEqual(config['run']['backend'], 'modern')
+                    self.assertEqual(config['run']['workers'], 1)
+                    self.assertEqual(config['omnisafe']['train_cfgs'], dict(vector_env_nums=1, parallel=1))
+                    self.assertEqual(set(config['PPO']), {'forward_timesteps'})
+                    self.assertEqual(set(config['env']), {
+                        'train_env_id', 'eval_env_id', 'cost_boundary', 'max_episode_steps',
+                    })
+                    for section, values in self.config['omnisafe'].items():
+                        self.assertEqual(set(config['omnisafe'][section]), set(values))
                     self.assertIs(config['clip_actions'], True)
                     self.assertTrue(Path(config['running']['expert_path']).is_dir())
                     self.assertTrue(Path(config['reference_config']).is_file())
                     self.assertTrue(Path(config['run']['output']).is_absolute())
 
-    def test_action_clipping_can_be_disabled_and_historical_configs_keep_their_behavior(self):
+    def test_native_lagrange_initializers_use_floating_point_values(self):
+        # Native Lagrange constructs a gradient-tracked tensor without a dtype override.
+        for method in METHODS:
+            for task in TASKS:
+                with self.subTest(method=method, task=task):
+                    config, _ = load_experiment_config(method=method, task=task)
+                    self.assertIsInstance(
+                        config['omnisafe']['lagrange_cfgs']['lagrangian_multiplier_init'], float,
+                    )
+
+    def test_non_hc_native_baselines_preserve_task_and_reference_hyperparameters(self):
+        for method in METHODS:
+            for task in ('Ant', 'Walker', 'Swimmer'):
+                with self.subTest(method=method, task=task):
+                    config, _ = load_experiment_config(method=method, task=task)
+                    reference = yaml.safe_load(Path(config['reference_config']).read_text())
+                    ppo = reference['PPO']
+                    native = config['omnisafe']
+                    self.assertEqual(native['algo_cfgs']['steps_per_epoch'], 10000)
+                    self.assertEqual(config['PPO']['forward_timesteps'], ppo['forward_timesteps'])
+                    for field, original in (
+                        ('update_iters', 'n_epochs'), ('batch_size', 'batch_size'),
+                        ('target_kl', 'target_kl'), ('entropy_coef', 'ent_coef'),
+                        ('max_grad_norm', 'max_grad_norm'), ('gamma', 'reward_gamma'),
+                        ('cost_gamma', 'cost_gamma'), ('lam', 'reward_gae_lambda'),
+                        ('lam_c', 'cost_gae_lambda'), ('clip', 'clip_range'),
+                    ):
+                        self.assertEqual(native['algo_cfgs'][field], ppo[original])
+                    self.assertEqual(native['model_cfgs']['actor']['lr'], ppo['learning_rate'])
+                    self.assertEqual(native['model_cfgs']['critic']['lr'], ppo['learning_rate'])
+                    self.assertEqual(native['model_cfgs']['actor']['hidden_sizes'], ppo['policy_layers'])
+                    self.assertEqual(native['model_cfgs']['critic']['hidden_sizes'], ppo['reward_vf_layers'])
+                    self.assertEqual(native['model_cfgs']['critic']['hidden_sizes'], ppo['cost_vf_layers'])
+                    self.assertEqual(native['lagrange_cfgs']['cost_limit'], ppo['budget'])
+                    self.assertEqual(native['lagrange_cfgs']['lagrangian_multiplier_init'], ppo['penalty_initial_value'])
+                    self.assertEqual(native['lagrange_cfgs']['lambda_lr'], ppo['penalty_learning_rate'])
+                    for field in ('n_iters', 'n_eval_episodes', 'save_every', 'expert_rollouts',
+                                  'sample_rollouts', 'store_sample_rollouts', 'use_buffer'):
+                        self.assertEqual(config['running'][field], reference['running'][field])
+                    for field in ('train_env_id', 'eval_env_id'):
+                        self.assertEqual(config['env'][field], reference['env'][field])
+                    self.assertEqual(config['env']['max_episode_steps'], 500)
+                    self.assertEqual(config['env']['cost_boundary'], 0.5 if task == 'Swimmer' else -3.0)
+                    self.assertEqual(Path(config['running']['expert_path']).name, f'Blocked{task}')
+                    for field in ('cn_learning_rate', 'cn_reg_coeff', 'cn_layers', 'cn_batch_size',
+                                  'clip_obs', 'cn_normalize', 'cn_target_kl_old_new',
+                                  'cn_target_kl_new_old', 'train_gail_lambda', 'cn_eps',
+                                  'backward_iters', 'anneal_clr_by_factor'):
+                        self.assertEqual(config['CN'][field], reference['CN'][field])
+                    if method == 'VICRL':
+                        self.assertEqual(config['CN']['di_prior'], reference['CN']['di_prior'])
+                        self.assertEqual(config['CN']['mode'], reference['CN']['mode'])
+                    else:
+                        self.assertEqual(config['CN']['no_importance_sampling'], reference['CN']['no_importance_sampling'])
+                        self.assertEqual(config['CN']['per_step_importance_sampling'], reference['CN']['per_step_importance_sampling'])
+
+    def test_action_clipping_can_be_disabled_explicitly(self):
         self.config['clip_actions'] = False
         config, _ = load_experiment_config(self.write_config())
         self.assertIs(config['clip_actions'], False)
-        del self.config['clip_actions']
-        for solver, expected in [('omnisafe', False), ('liu', True)]:
-            with self.subTest(solver=solver):
-                self.config['run']['solver'] = solver
-                config, _ = load_experiment_config(self.write_config())
-                self.assertIs(config['clip_actions'], expected)
 
-    def test_action_clipping_requires_a_yaml_boolean(self):
-        self.config['clip_actions'] = 'false'
-        with self.assertRaisesRegex(ValueError, 'clip_actions'):
+    def test_action_clipping_must_be_explicit(self):
+        del self.config['clip_actions']
+        with self.assertRaisesRegex(ValueError, 'clip_actions must be an explicit YAML boolean'):
             load_experiment_config(self.write_config())
 
+    def test_action_clipping_requires_a_yaml_boolean(self):
+        for value in ('false', 0, 1, None):
+            with self.subTest(value=value):
+                self.config['clip_actions'] = value
+                with self.assertRaisesRegex(ValueError, 'clip_actions'):
+                    load_experiment_config(self.write_config())
+
     def test_absent_console_options_preserve_yaml_values(self):
-        self.config['run']['solver'] = 'liu'
         self.config['device'] = 'cuda:1'
-        self.config['run'].update(seed=456, workers=3, backend='modern', torch_threads=2)
+        self.config['run'].update(seed=456, workers=1, backend='modern', torch_threads=2)
         config, _ = load_experiment_config(
             self.write_config(), overrides=dict(device=None, seed=None, workers=None, backend=None,
                                                 torch_threads=None, iterations=None))
         self.assertEqual(config['device'], 'cuda:1')
         self.assertEqual(config['run']['seed'], 456)
-        self.assertEqual(config['run']['workers'], 3)
+        self.assertEqual(config['run']['workers'], 1)
         self.assertEqual(config['run']['backend'], 'modern')
         self.assertEqual(config['run']['torch_threads'], 2)
         self.assertEqual(config['running']['n_iters'], self.config['running']['n_iters'])
@@ -90,10 +153,14 @@ class ExperimentConfigTest(unittest.TestCase):
         self.assertEqual(config['run']['output'], str(Path('custom/results').resolve()))
 
     def test_unsupported_solver_and_conflicting_selectors_fail_clearly(self):
-        self.config['run']['solver'] = 'unsupported'
-        with self.assertRaisesRegex(ValueError, 'run.solver must be liu or omnisafe'):
-            load_experiment_config(self.write_config())
-        self.config['run']['solver'] = 'liu'
+        for solver in ('liu', 'unsupported', None):
+            with self.subTest(solver=solver):
+                self.config['run']['solver'] = solver
+                with self.assertRaisesRegex(ValueError, 'run.solver must be omnisafe'):
+                    load_experiment_config(self.write_config())
+        self.config['run']['solver'] = 'omnisafe'
+        with self.assertRaisesRegex(ValueError, 'run.solver must be omnisafe'):
+            load_experiment_config(self.write_config(), overrides={'solver': 'liu'})
         with self.assertRaisesRegex(ValueError, '--method conflicts'):
             load_experiment_config(self.write_config(), method='MECL')
         with self.assertRaisesRegex(ValueError, '--task conflicts'):
@@ -109,14 +176,20 @@ class ExperimentConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'run.backend must be modern'):
             load_experiment_config(self.write_config())
 
-    def test_native_solver_checks_forward_budget_and_single_environment(self):
+    def test_forward_budget_must_contain_complete_native_epochs(self):
         self.config['PPO']['forward_timesteps'] = 20001
         with self.assertRaisesRegex(ValueError, 'divisible'):
             load_experiment_config(self.write_config())
-        self.config['PPO']['forward_timesteps'] = 20000
-        self.config['run']['workers'] = 2
-        with self.assertRaisesRegex(ValueError, 'one environment'):
-            load_experiment_config(self.write_config())
+
+    def test_only_one_environment_and_one_process_are_supported(self):
+        for section, field in ((self.config['run'], 'workers'),
+                               (self.config['omnisafe']['train_cfgs'], 'vector_env_nums'),
+                               (self.config['omnisafe']['train_cfgs'], 'parallel')):
+            with self.subTest(field=field):
+                section[field] = 2
+                with self.assertRaisesRegex(ValueError, 'one environment and one process'):
+                    load_experiment_config(self.write_config())
+                section[field] = 1
 
 
 if __name__ == '__main__':

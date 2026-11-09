@@ -54,23 +54,17 @@ def load_experiment_config(config_path=None, *, method=None, task=None, override
         if key in overrides:
             config[section][name] = overrides[key]
 
-    if run['solver'] not in ('liu', 'omnisafe'):
-        raise ValueError('run.solver must be liu or omnisafe.')
-    # Preserve historical behavior when opening an older experiment config.
-    config.setdefault('clip_actions', run['solver'] == 'liu')
-    if not isinstance(config['clip_actions'], bool):
-        raise ValueError('clip_actions must be a YAML boolean (true or false).')
+    if run.get('solver') != 'omnisafe':
+        raise ValueError('run.solver must be omnisafe; only native OmniSafe PPO-Lag is supported.')
+    if not isinstance(config.get('clip_actions'), bool):
+        raise ValueError('clip_actions must be an explicit YAML boolean (true or false).')
     if 'rollout_steps' in overrides:
-        if run['solver'] == 'omnisafe':
-            config['omnisafe']['algo_cfgs']['steps_per_epoch'] = overrides['rollout_steps']
-        else:
-            config['PPO']['n_steps'] = overrides['rollout_steps']
-    if run['solver'] == 'omnisafe':
-        native = config['omnisafe']
-        if run['workers'] != 1 or native['train_cfgs']['vector_env_nums'] != 1 or native['train_cfgs']['parallel'] != 1:
-            raise ValueError('The native ICRL runner currently uses one environment and one process.')
-        if config['PPO']['forward_timesteps'] % native['algo_cfgs']['steps_per_epoch']:
-            raise ValueError('PPO.forward_timesteps must be divisible by omnisafe.algo_cfgs.steps_per_epoch.')
+        config['omnisafe']['algo_cfgs']['steps_per_epoch'] = overrides['rollout_steps']
+    native = config['omnisafe']
+    if run['workers'] != 1 or native['train_cfgs']['vector_env_nums'] != 1 or native['train_cfgs']['parallel'] != 1:
+        raise ValueError('The ICRL runner currently uses one environment and one process.')
+    if config['PPO']['forward_timesteps'] % native['algo_cfgs']['steps_per_epoch']:
+        raise ValueError('PPO.forward_timesteps must be divisible by omnisafe.algo_cfgs.steps_per_epoch.')
     if run['backend'] != 'modern':
         raise ValueError('Only the installed Gymnasium/MuJoCo backend is supported; run.backend must be modern.')
     dataset = overrides.get('expert_data', config['running']['expert_path'])

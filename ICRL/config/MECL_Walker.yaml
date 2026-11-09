@@ -1,8 +1,8 @@
-# Edit this file to configure the complete experiment. Paths are relative to this file.
-# solver: liu preserves reference update rules; physics use installed Gymnasium/MuJoCo.
+# Native OmniSafe PPO-Lag + MECL on the installed Gymnasium/MuJoCo backend.
+# Unvalidated transfer baseline; this is not a reproduction of Liu update rules.
+# Native normalizers, initialization, updates, and episode-cost budget semantics apply.
 # env.cost_boundary is a strict post-step x threshold (Swimmer: x >; others: x <).
-# Budget is mean raw cost per step for the Liu solver. Normalization clips are separate
-# from CN.clip_obs, which clips the constraint network inputs.
+# Paths are relative to this file. Runtime settings come from run/device.
 clip_actions: true
 method: MECL
 task: Walker
@@ -13,9 +13,9 @@ run:
   seed: 123
   constraint_seed: 0
   sampling_seed: 0
-  workers: 5
+  workers: 1
   backend: modern
-  solver: liu
+  solver: omnisafe
   torch_threads: 1
   output: null
 env:
@@ -23,15 +23,6 @@ env:
   eval_env_id: WalkerWithPos-v0
   cost_boundary: -3.0
   max_episode_steps: 500
-  reward_gamma: 0.99
-  cost_gamma: 0.99
-  dont_normalize_obs: false
-  dont_normalize_reward: false
-  dont_normalize_cost: false
-  clip_obs: 10.0
-  clip_reward: 10.0
-  clip_cost: 10.0
-  normalization_epsilon: 1.0e-08
 running:
   n_iters: 100
   n_eval_episodes: 10
@@ -44,42 +35,7 @@ running:
   sample_deterministic: false
   eval_deterministic: false
 PPO:
-  learning_rate: 0.0001
-  n_steps: 2048
-  n_epochs: 20
-  reward_gamma: 0.99
-  reward_gae_lambda: 0.9
-  cost_gamma: 0.99
-  cost_gae_lambda: 0.9
-  clip_range: 0.4
-  ent_coef: 0.0
-  reward_vf_coef: 0.5
-  cost_vf_coef: 0.5
-  max_grad_norm: 0.5
-  target_kl: 0.02
-  policy_layers:
-  - 64
-  - 64
-  reward_vf_layers:
-  - 64
-  - 64
-  cost_vf_layers:
-  - 64
-  - 64
-  batch_size: 128
   forward_timesteps: 200000
-  penalty_initial_value: 0.1
-  penalty_learning_rate: 0.05
-  budget: 0
-  activation: tanh
-  optimizer_epsilon: 1.0e-05
-  log_std_init: 0.0
-  hidden_gain: 1.4142135623730951
-  policy_output_gain: 0.01
-  value_output_gain: 1.0
-  dual_optimizer_epsilon: 1.0e-08
-  advantage_epsilon: 1.0e-08
-  kl_stop_factor: 1.5
 CN:
   cn_learning_rate: 0.001
   cn_reg_coeff: 0.6
@@ -101,3 +57,62 @@ CN:
   optimizer_epsilon: 1.0e-05
   no_importance_sampling: false
   per_step_importance_sampling: true
+omnisafe:
+  algo_cfgs:
+    steps_per_epoch: 10000
+    update_iters: 20
+    batch_size: 128
+    target_kl: 0.02
+    entropy_coef: 0.0
+    reward_normalize: true
+    cost_normalize: true
+    obs_normalize: true
+    kl_early_stop: true
+    use_max_grad_norm: true
+    max_grad_norm: 0.5
+    use_critic_norm: false
+    critic_norm_coef: 0.0
+    gamma: 0.99
+    cost_gamma: 0.99
+    lam: 0.9
+    lam_c: 0.9
+    clip: 0.4
+    adv_estimation_method: gae
+    standardized_rew_adv: true
+    standardized_cost_adv: true
+    penalty_coef: 0.0
+    use_cost: true
+  model_cfgs:
+    weight_initialization_mode: orthogonal
+    actor_type: gaussian_learning
+    linear_lr_decay: false
+    exploration_noise_anneal: false
+    std_range:
+    - 0.5
+    - 0.1
+    actor:
+      hidden_sizes:
+      - 64
+      - 64
+      activation: tanh
+      lr: 0.0001
+    critic:
+      hidden_sizes:
+      - 64
+      - 64
+      activation: tanh
+      lr: 0.0001
+  lagrange_cfgs:
+    cost_limit: 0.0
+    lagrangian_multiplier_init: 0.1
+    lambda_lr: 0.05
+    lambda_optimizer: Adam
+  logger_cfgs:
+    use_wandb: false
+    wandb_project: omnisafe
+    use_tensorboard: true
+    save_model_freq: 25
+    window_lens: 100
+  train_cfgs:
+    vector_env_nums: 1
+    parallel: 1

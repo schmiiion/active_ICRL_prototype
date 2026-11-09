@@ -10,8 +10,9 @@ config/demo checksums are recorded in `data/liu_provenance.json`. All current
 environments use the installed OmniSafe/Gymnasium MuJoCo runtime. This changes
 physics relative to the original paper's simulator.
 
-All task changes, normalization, cost replacement, and reproduction-specific
-optimization live under `ICRL/`. No changes to the OmniSafe framework are needed.
+Task definitions, learned-cost integration, raw trajectory handling and constraint
+models live under `ICRL/`; forward optimization uses native OmniSafe PPO-Lag.
+No changes to the OmniSafe framework are needed.
 Importing `ICRL.blocked_envs` registers four additional CMDP IDs; the ordinary
 OmniSafe and Safety-Gymnasium tasks retain their original behavior.
 
@@ -43,53 +44,53 @@ execution. The switch applies consistently to ICRL training, sampling and
 evaluation, entirely inside `ICRL/`; ordinary OmniSafe forward training is
 unaffected. Existing run outputs and expert datasets are unchanged.
 
-`run.solver: omnisafe` selects native OmniSafe `PPOLag` with persistent
-actor/critics, optimizers, multiplier and normalizers across constraint updates.
-The active `VICRL_HC.yaml` and `MECL_HC.yaml` use this solver and the same ten
-newly generated expert trajectories. Their `omnisafe` blocks expose the native
-optimizer's settings. The MECL HC preset matches VICRL's shared settings,
+`run.solver: omnisafe` is the only supported forward solver. All eight active
+presets use native OmniSafe `PPOLag` with persistent actor/critics, optimizers,
+multiplier and normalizers across constraint updates. `run.backend: modern`
+identifies the only supported simulator runtime. The former Liu-compatible
+forward solver, collector and normalization implementation have been removed.
+The Liu MECL/VICRL constraint models, original task definitions and XML assets,
+raw demonstrations, Figure 2 metrics, licenses and provenance remain.
+
+The HC presets use the same ten generated expert trajectories. Their `omnisafe`
+blocks expose native optimizer settings. MECL HC matches VICRL's shared settings,
 including replay (capacity 500), while retaining MECL's objective and per-step
 importance sampling. This controlled comparison differs from Liu's released
-MECL preset, which disables replay.
-`run.solver: liu` retains the source-equivalent solver used by the other tasks' presets.
-`run.backend: modern` identifies the only supported
-simulator runtime; it does not select a PPO implementation.
-The original copied YAMLs in `config/liu/` remain unchanged as provenance; they
-are reference inputs rather than runnable experiment configs. Active configs
-omit copied options that the implementation does not support, such as SDE and
-PID multiplier updates. Task reward equations and XML assets remain part of the
-environment definition.
+MECL preset, which disables replay. The six non-HC presets are **unvalidated
+native transfer presets**: source PPO values are mapped to native options where
+possible, with one simulator and 10,000 transitions per epoch. Their original
+constraint settings, demonstrations and task budgets are retained. Matching YAML
+values does not make native PPO numerically equivalent to Liu's optimizer.
 
+The original copied YAMLs in `config/liu/` remain unchanged as provenance;
+they are reference inputs rather than runnable experiment configs. Active
+configs omit unsupported source options such as SDE and PID multiplier updates.
 The older `--method VICRL --task HC` syntax selects the corresponding active
 config. Other CLI flags remain optional explicit overrides for diagnostics;
-their defaults no longer override values in YAML. The native solver currently
-uses one simulator and one process; the Liu presets use five independent
-simulators. CPU PyTorch uses one thread by default. Environments execute
-synchronously in the current Python process using the installed `mujoco` package
-(currently MuJoCo 2.3.3 with Gymnasium 0.28.1). Each environment has its own reset
-RNG. Observation/reward/cost statistics are
-updated jointly after each batch, matching the reference subprocess layout.
-Pass `--device cuda` on a supported machine to use CUDA neural networks.
+their defaults never overwrite values in YAML. Native training uses one
+simulator and one process; CPU PyTorch uses one thread by default. Environments
+execute synchronously using the installed `mujoco` package (currently MuJoCo
+2.3.3 with Gymnasium 0.28.1). Pass `--device cuda` on a supported machine to use
+CUDA neural networks.
 
-Each native MECL/VICRL HC outer iteration runs exactly 200,000 training transitions.
-The active VICRL HC config uses 60 iterations (12,000,000 training transitions,
-12,000 episodes); MECL HC uses 30 iterations (6,000,000 transitions). Each native epoch collects
-20,000 transitions, aligned with the 1,000-step episode horizon. PPO uses ten
-update passes, subject to native KL early stopping. Both constraint networks
-retain their respective source learning settings.
-The native learned-cost budget is zero, matching Liu's target; this differs
-from the expert policy's known-cost training budget of one. Native
-observation/reward/cost normalization is enabled. Native normalization,
-initialization, GAE and PPO-Lag update semantics are retained rather than
-replaced with the Liu solver's implementations.
+Each HC outer iteration runs exactly 200,000 training transitions. VICRL HC
+uses 60 iterations (12,000,000 transitions); MECL HC uses 30 (6,000,000).
+HC epochs contain 20,000 transitions, aligned with the 1,000-step horizon,
+and allow ten PPO update passes, subject to native KL early stopping. Both
+constraint networks retain their respective source learning settings. The latest
+12-million-step VICRL HC runs already used native OmniSafe; removing the obsolete
+solver changes none of the HC training settings or saved results.
 
-For the Liu solver, a 200,000-step budget rounds up to 20 complete rollouts of
-5 x 2,048 transitions: 204,800 per iteration (6,144,000 over 30 iterations).
-The sampler and evaluation add separate transitions. Other tasks have their own budgets
-and hyperparameters in their active configs; these are not replaced with HC defaults.
+The native learned-cost budget is zero, distinct from the expert policy's
+known-cost training budget of one. Observation/reward/cost normalization is
+enabled. Native normalization, initialization, GAE, clipping, KL stopping and
+PPO-Lag multiplier updates are retained. In particular, native PPO-Lag updates
+the multiplier from episode costs before policy updates, whereas Liu's source
+uses mean per-step costs after policy updates. Sampling and evaluation add
+separate transitions outside each preset's forward-training budget.
 
-The reference plots use seeds 123, 321, 456, 654, and 666. For the full requested
-comparison, run each method/task/seed combination:
+The reference plots use seeds 123, 321, 456, 654, and 666. For a five-seed
+native transfer comparison, run each method/task/seed combination:
 
 ```bash
 for task in HC Ant Walker Swimmer; do
@@ -228,70 +229,41 @@ checkpoints include actor/critics, all optimizers, multiplier, normalizers,
 constraint state, replay data and RNG state. A single native run is a transfer
 experiment; it does not supply the paper's five-seed uncertainty band.
 
-## Implementation and numerical checks
+## Implementation and validation
 
-- `blocked_envs.py`: original reward equations, observations, reset noise,
-  positional constraints, fall termination, and horizons. Original XML assets
-  are bundled in `env_assets/`. Both the registered CMDPs and `make_raw_env`
-  use the same installed MuJoCo runtime.
-- `normalization.py`: Liu's float64 running moments and discounted-return
-  reward/cost scaling, including clipping and reset behavior.
-- `rollouts.py`: cached pre-action state/action inputs to the learned cost;
-  post-action state for the true positional constraint; independent workers;
-  original sampling/evaluation and per-episode metrics.
+- `blocked_envs.py` and `env_assets/`: original task rewards, observations, reset
+  noise, positional constraints, fall termination and horizons on the installed
+  MuJoCo runtime.
 - `native_ppo.py`, `ICRL_PPOLag.py`, `native_sampling.py`, `learned_cost_adapter.py`:
-  native PPO-Lag continuation, learned-cost substitution, raw-state sampling,
-  frozen evaluation statistics and per-episode safety/Figure 2 logging.
-- `liu_ppo.py`: OmniSafe Gaussian actor and value critics with original-equivalent
-  initialization, rollout GAE, and PPO-Lagrangian loss/optimizer/dual updates.
-  Using default OmniSafe `PPOLag` would change the cost surrogate, advantage
-  normalization, optimizer, and multiplier update, so this solver is isolated.
-- `constraint_models/`: original MECL/VICRL losses, Beta sampling, regularization,
-  importance sampling, and learning-rate schedules. The MLP factory consumes the
-  same RNG stream as the reference. Numerical quirks in the source are retained
-  when changing them would alter the experiment.
+  persistent native PPO-Lag, learned costs from raw pre-action states/executed
+  policy-coordinate actions, frozen sampling/evaluation statistics, and raw
+  true-cost/Figure 2 logging.
+- `constraint_models/`: Liu's MECL/VICRL losses, Beta sampling, regularization,
+  importance sampling and learning-rate schedules. Source numerical quirks are
+  retained where changing them would alter the constraint objective.
 
-The same config-first entry point selects either forward solver; the VICRL
-constraint-network objective is shared by both.
-
-**Liu solver's preserved collector quirk:** the original `OnPolicyWithCostAlgorithm`
-bootstraps the final transition with the critic values evaluated before that
-transition, rather than evaluating the returned next observation. This solver
-deliberately retains that behavior. It also retains the original boolean final
-done flags, which promote the final GAE intermediates to float64 before storage
-as float32. The collector test executes the original method on two consecutive
-rollouts and compares every stored field, including advantages and returns.
-Changing either behavior would define a different experiment.
-
-The differential tests execute the original source using the same PyTorch
-runtime and identical tensors, rather than comparing independently drifting
-learning curves. They check initialization, network outputs, losses, gradients,
-parameter updates, Adam moments, GAE, clipping, and dual updates:
+Run the component/integration suites, then validate the short native run above:
 
 ```bash
 python -m unittest discover -s ICRL/tests -v
-python -m ICRL.validate_run ICRL/runs/your_run
+python -m unittest discover -s tests -p 'test_icrl*.py' -v
+python -m ICRL.validate_run ICRL/diagnostics/quick_VICRL_HC \
+  --expert-data ICRL/data/generated/HC_seed123
 ```
 
-For validation only, the original repository is expected beside this repository
-at `../ICRL-benchmarks-public`, or set `LIU_ICRL_REFERENCE` to its location.
-Training does not import or otherwise depend on that checkout.
+Source constraint comparisons require the original repository beside this
+repository at `../ICRL-benchmarks-public`, or `LIU_ICRL_REFERENCE` set to its
+location. Training does not depend on that checkout.
 
-Every run records `config.yaml`, provenance, `episodes.csv`, `iterations.csv`,
-constraint-loss metrics, and a model checkpoint. It also records actual first
-rollout/sampler inputs and pre-update optimizer states so `validate_run` can
-replay real updates against unmodified original classes. These files establish
-numerical update parity on fixed data. The validator also reconstructs the saved
-advantages and returns using the original buffer and collector bootstrap,
-requiring exact agreement before it compares optimizer updates. A successful
-optimizer-only replay is insufficient to establish collector parity. These
-checks do not imply identical trajectories
-across different MuJoCo or PyTorch versions. See `reproduction_audit.md` and
-`env_assets/AUDIT.md` for the source comparison and simulator limitations.
-For native runs, `validate_run` replays the constraint update against source
-and explicitly marks source-PPO replay as not applicable: native PPO-Lag has
-different collector/optimizer semantics. Persistence and native integration
-are tested separately rather than advertised as SB3 numerical parity.
+`validate_run` replays the recorded first constraint update against unmodified
+source classes on identical nominal/expert samples and saved optimizer/RNG
+states. It compares losses, gradients, parameters and Adam moments. It performs
+no source-PPO replay: the old forward-solver and normalization parity suites
+have been removed. Native persistence, sampling, logging, configuration and
+expert collection have separate integration tests. Fixed-data constraint parity
+does not establish equivalent PPO updates, trajectories or learning curves.
+See `reproduction_audit.md` and `env_assets/AUDIT.md` for provenance and simulator
+limitations.
 
 ## Plot the requested panels
 
@@ -303,7 +275,7 @@ Pass only the intended full experiment directories if diagnostics share a
 method/task/seed with full runs. For example:
 
 ```bash
-python -m ICRL.plot_results ICRL/runs/VICRL_HC_seed123 \
+python -m ICRL.plot_results ICRL/runs/VICRL_HC_omnisafe_seed123_60iters \
   --envs HC --output ICRL/results/HC_seed123.png
 ```
 
@@ -330,8 +302,8 @@ Installed MuJoCo physics are not identical to the original paper's engine.
 Historical experiment artifacts retain the actual runtime in their metadata;
 they are not evidence that current trajectories match the old simulator.
 
-The learner uses the installed modern PyTorch runtime. Numerical comparisons
-execute original and ported updates on that same runtime; they do not establish
-bitwise equivalence to PyTorch 1.12 from the old environment. Long-run empirical
-agreement remains an experimental result, assessed from completed multi-seed
-curves rather than inferred from fixed-input tests.
+The learner uses the installed modern PyTorch runtime. Constraint comparisons
+execute original and ported constraint updates on that same runtime; they do not
+establish bitwise equivalence to PyTorch 1.12 from the old environment. Long-run
+empirical agreement remains an experimental result, assessed from completed
+multi-seed curves rather than inferred from fixed-input tests.
