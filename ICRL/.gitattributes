@@ -1,0 +1,4 @@
+# Preserve demonstration bytes and the hashes recorded in experiment metadata.
+*.pkl binary
+*.npz binary
+*.npy binary

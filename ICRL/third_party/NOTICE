@@ -1,0 +1,21 @@
+Third-party notices
+
+ICRL adapts constraint models, utilities and experiment configurations from
+Guiliang Liu et al.'s ICRL-benchmarks-public repository:
+https://github.com/Guiliang/ICRL-benchmarks-public
+Its BSD 3-Clause license is preserved in LICENSE_LIU.txt.
+
+The source-equivalent PPO and normalization implementations follow the
+Stable-Baselines3 code distributed with that repository. Its MIT license is
+preserved in LICENSE_STABLE_BASELINES3.txt.
+
+MuJoCo task definitions and XML assets derive from Gym/Gymnasium and the Liu
+benchmark. Gymnasium's MIT notice, including OpenAI and Farama Foundation
+copyrights, is preserved in LICENSE_GYMNASIUM.txt.
+
+Reference demonstration origins and hashes are recorded in
+../data/liu_provenance.json. Generated demonstrations retain their collection
+settings and checkpoint hashes in their dataset manifest.
+
+These notices supplement the root project's existing license; they do not
+replace the licenses of the respective upstream components.
