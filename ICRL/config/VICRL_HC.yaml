@@ -1,0 +1,121 @@
+# Native OmniSafe PPO-Lag + VICRL on the installed MuJoCo backend.
+# Runtime settings come from run/device. Native total_steps = n_iters * forward_timesteps.
+# Learned-cost budget 0 follows Liu; it is distinct from expert policy training budget 1.
+# The ten new expert episodes have 1,000 steps each (10,000 raw state/action pairs).
+# Native normalizers/initialization/update semantics are retained; this tests transfer.
+clip_actions: true
+method: VICRL
+task: HC
+group: VICRL
+device: cpu
+reference_config: liu/VICRL_HC.yaml
+run:
+  seed: 123
+  constraint_seed: 0
+  sampling_seed: 0
+  workers: 1
+  backend: modern
+  solver: omnisafe
+  torch_threads: 1
+  output: ../runs/VICRL_HC_omnisafe_seed123_60iters
+env:
+  train_env_id: HCWithPos-v0
+  eval_env_id: HCWithPos-v0
+  cost_boundary: -3.0
+  max_episode_steps: 1000
+running:
+  n_iters: 60 # 60*200000 = 12,000,000 steps in total
+  n_eval_episodes: 10
+  save_every: 5
+  expert_rollouts: 10
+  sample_rollouts: 10
+  store_sample_rollouts: 500
+  use_buffer: true
+  expert_path: ../data/generated/HC_seed123
+  sample_deterministic: false
+  eval_deterministic: false
+PPO:
+  forward_timesteps: 200000
+CN:
+  cn_learning_rate: 0.005
+  cn_reg_coeff: 0.5
+  cn_layers:
+  - 20
+  cn_batch_size: null
+  clip_obs: 20
+  cn_normalize: false
+  cn_target_kl_old_new: 10
+  cn_target_kl_new_old: 2.5
+  train_gail_lambda: false
+  cn_eps: 1.0e-05
+  backward_iters: 10
+  anneal_clr_by_factor: 0.9
+  obs_select_dim: null
+  acs_select_dim: null
+  activation: relu
+  optimizer_epsilon: 1.0e-05
+  no_importance_sampling: true
+  per_step_importance_sampling: false
+  di_prior:
+  - 0.9
+  - 0.1
+  mode: sample
+omnisafe:
+  algo_cfgs:
+    steps_per_epoch: 20000
+    update_iters: 10
+    batch_size: 64
+    target_kl: 0.01
+    entropy_coef: 0.0
+    reward_normalize: true
+    cost_normalize: true
+    obs_normalize: true
+    kl_early_stop: true
+    use_max_grad_norm: true
+    max_grad_norm: 0.5
+    use_critic_norm: false
+    critic_norm_coef: 0.0
+    gamma: 0.99
+    cost_gamma: 0.99
+    lam: 0.95
+    lam_c: 0.95
+    clip: 0.2
+    adv_estimation_method: gae
+    standardized_rew_adv: true
+    standardized_cost_adv: true
+    penalty_coef: 0.0
+    use_cost: true
+  model_cfgs:
+    weight_initialization_mode: orthogonal
+    actor_type: gaussian_learning
+    linear_lr_decay: false
+    exploration_noise_anneal: false
+    std_range:
+    - 0.5
+    - 0.1
+    actor:
+      hidden_sizes:
+      - 64
+      - 64
+      activation: tanh
+      lr: 0.0003
+    critic:
+      hidden_sizes:
+      - 64
+      - 64
+      activation: tanh
+      lr: 0.0003
+  lagrange_cfgs:
+    cost_limit: 0.0
+    lagrangian_multiplier_init: 1.0
+    lambda_lr: 0.1
+    lambda_optimizer: Adam
+  logger_cfgs:
+    use_wandb: false
+    wandb_project: omnisafe
+    use_tensorboard: true
+    save_model_freq: 25
+    window_lens: 100
+  train_cfgs:
+    vector_env_nums: 1
+    parallel: 1

@@ -1,0 +1,102 @@
+# Edit this file to configure the complete experiment. Paths are relative to this file.
+# solver: liu preserves reference update rules; physics use installed Gymnasium/MuJoCo.
+# env.cost_boundary is a strict post-step x threshold (Swimmer: x >; others: x <).
+# Budget is mean raw cost per step for the Liu solver. Normalization clips are separate
+# from CN.clip_obs, which clips the constraint network inputs.
+clip_actions: true
+method: MECL
+task: Swimmer
+group: ICRL
+device: cpu
+reference_config: liu/MECL_Swimmer.yaml
+run:
+  seed: 123
+  constraint_seed: 0
+  sampling_seed: 0
+  workers: 5
+  backend: modern
+  solver: liu
+  torch_threads: 1
+  output: null
+env:
+  train_env_id: SwimmerWithPos-v0
+  eval_env_id: SwimmerWithPos-v0
+  cost_boundary: 0.5
+  max_episode_steps: 500
+  reward_gamma: 0.99
+  cost_gamma: 0.99
+  dont_normalize_obs: false
+  dont_normalize_reward: false
+  dont_normalize_cost: false
+  clip_obs: 10.0
+  clip_reward: 10.0
+  clip_cost: 10.0
+  normalization_epsilon: 1.0e-08
+running:
+  n_iters: 100
+  n_eval_episodes: 10
+  save_every: 10
+  expert_rollouts: 50
+  sample_rollouts: 50
+  store_sample_rollouts: null
+  use_buffer: false
+  expert_path: ../data/expert_data/BlockedSwimmer
+  sample_deterministic: false
+  eval_deterministic: false
+PPO:
+  learning_rate: 0.0003
+  n_steps: 2048
+  n_epochs: 20
+  reward_gamma: 0.99
+  reward_gae_lambda: 0.9
+  cost_gamma: 0.99
+  cost_gae_lambda: 0.95
+  clip_range: 0.4
+  ent_coef: 0.0
+  reward_vf_coef: 0.5
+  cost_vf_coef: 0.5
+  max_grad_norm: 0.5
+  target_kl: 0.01
+  policy_layers:
+  - 64
+  - 64
+  reward_vf_layers:
+  - 64
+  - 64
+  cost_vf_layers:
+  - 64
+  - 64
+  batch_size: 128
+  forward_timesteps: 50000
+  penalty_initial_value: 1
+  penalty_learning_rate: 0.01
+  budget: 0
+  activation: tanh
+  optimizer_epsilon: 1.0e-05
+  log_std_init: 0.0
+  hidden_gain: 1.4142135623730951
+  policy_output_gain: 0.01
+  value_output_gain: 1.0
+  dual_optimizer_epsilon: 1.0e-08
+  advantage_epsilon: 1.0e-08
+  kl_stop_factor: 1.5
+CN:
+  cn_learning_rate: 0.001
+  cn_reg_coeff: 0.6
+  cn_layers:
+  - 20
+  cn_batch_size: null
+  clip_obs: 20
+  cn_normalize: false
+  cn_target_kl_old_new: 10
+  cn_target_kl_new_old: 2.5
+  train_gail_lambda: false
+  cn_eps: 1.0e-05
+  backward_iters: 5
+  anneal_clr_by_factor: 0.9
+  obs_select_dim: null
+  acs_select_dim: null
+  activation: relu
+  optimizer_epsilon: 1.0e-05
+  no_importance_sampling: false
+  per_step_importance_sampling: true
