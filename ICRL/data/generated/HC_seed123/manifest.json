@@ -1,0 +1,127 @@
+{
+  "checkpoint": "/Users/jonas/Uni/SoSe26/Masterarbeit/active_ICRL_prototype/runs/experts/HC_modern/PPOLag-{HCWithPos-v0}/seed-123-2026-11-08-16-27-59/torch_save/epoch-200.pt",
+  "checkpoint_sha256": "30f7afae0f888003e160abf8b04a4e768302b6bf7468d9715c9ebc06c0c638dd",
+  "training_config_sha256": "ba0aaab579469a3be634311b37065b07ab2d723a2709a702b3de8d7fe8cd3534",
+  "collection": {
+    "run_dir": "/Users/jonas/Uni/SoSe26/Masterarbeit/active_ICRL_prototype/runs/experts/HC_modern/PPOLag-{HCWithPos-v0}/seed-123-2026-11-08-16-27-59",
+    "checkpoint": "epoch-200.pt",
+    "output": "/Users/jonas/Uni/SoSe26/Masterarbeit/active_ICRL_prototype/ICRL/data/generated/HC_seed123",
+    "episodes": 10,
+    "seed": 20000,
+    "deterministic": false,
+    "max_episode_cost": 0.0,
+    "min_episode_reward": null,
+    "max_attempts": 100,
+    "torch_threads": 1
+  },
+  "env_id": "HCWithPos-v0",
+  "env_cfgs": {
+    "backend": "modern",
+    "cost_boundary": -3.0,
+    "max_episode_steps": 1000
+  },
+  "observation_normalization": "frozen checkpoint statistics",
+  "actions": "policy coordinates, passed through native ActionScale without additional clipping",
+  "versions": {
+    "numpy": "1.23.5",
+    "torch": "2.15.0",
+    "gymnasium": "0.28.1",
+    "mujoco": "2.3.3"
+  },
+  "attempts": [
+    {
+      "seed": 20000,
+      "reward": 4926.273519705981,
+      "cost": 0.0,
+      "length": 1000,
+      "accepted": true,
+      "file": "trajectory-000000.npz",
+      "sha256": "79dce99c8ed02d8cda74fa918eeb3848b601301b37c8df2fecf95285eeb40c84"
+    },
+    {
+      "seed": 20001,
+      "reward": 4887.035939236637,
+      "cost": 0.0,
+      "length": 1000,
+      "accepted": true,
+      "file": "trajectory-000001.npz",
+      "sha256": "437508a2bb9b6afccec725d13ecd8c6e6dae81a201cad267b29a0472bfe8480d"
+    },
+    {
+      "seed": 20002,
+      "reward": 4460.443325068802,
+      "cost": 0.0,
+      "length": 1000,
+      "accepted": true,
+      "file": "trajectory-000002.npz",
+      "sha256": "2236021edf8eb16c156111e29f46c103fd7352ad81edf72ebdc1f7bb18c628d1"
+    },
+    {
+      "seed": 20003,
+      "reward": 5038.506772982888,
+      "cost": 0.0,
+      "length": 1000,
+      "accepted": true,
+      "file": "trajectory-000003.npz",
+      "sha256": "ff5697a6b4ead8c427c91a33cdea5b2b264594490428a4c821adce6a70873bcc"
+    },
+    {
+      "seed": 20004,
+      "reward": 4879.89586460311,
+      "cost": 0.0,
+      "length": 1000,
+      "accepted": true,
+      "file": "trajectory-000004.npz",
+      "sha256": "d308495635f6d497ac83f8cc38f3e218e121382b2906c3c21b498477fdaca26d"
+    },
+    {
+      "seed": 20005,
+      "reward": 5021.3632466048,
+      "cost": 0.0,
+      "length": 1000,
+      "accepted": true,
+      "file": "trajectory-000005.npz",
+      "sha256": "7dedcb3afa32444d436b6e3f37e36134bf48931daa49f62bbed5783bf0b9bc7c"
+    },
+    {
+      "seed": 20006,
+      "reward": 4069.59794095243,
+      "cost": 0.0,
+      "length": 1000,
+      "accepted": true,
+      "file": "trajectory-000006.npz",
+      "sha256": "8f90acbd8d9bfc812309d54d3d78cf746831c867fbd99e01ec753eec8b2514f6"
+    },
+    {
+      "seed": 20007,
+      "reward": 4918.551664356142,
+      "cost": 0.0,
+      "length": 1000,
+      "accepted": true,
+      "file": "trajectory-000007.npz",
+      "sha256": "03b2a337d5d83eca772957c7108f2470008e2f01859635da6b2732d7b1c054d6"
+    },
+    {
+      "seed": 20008,
+      "reward": 4984.582801224664,
+      "cost": 0.0,
+      "length": 1000,
+      "accepted": true,
+      "file": "trajectory-000008.npz",
+      "sha256": "a2f3044425f89d4ae877f86f7cad39a59055f03a4f620c5b7c5b43914befc873"
+    },
+    {
+      "seed": 20009,
+      "reward": 4625.256223414093,
+      "cost": 0.0,
+      "length": 1000,
+      "accepted": true,
+      "file": "trajectory-000009.npz",
+      "sha256": "bcc5b4235aaa83759e499f226e64f7b36cfa79c8e58059b8212b56198137157a"
+    }
+  ],
+  "accepted": 10,
+  "attempted": 10,
+  "complete": true,
+  "acceptance_rate": 1.0
+}
